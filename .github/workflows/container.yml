@@ -54,7 +54,29 @@ jobs:
           --network luxora-ci
           --publish 5000:5000
           --env MONGO_URI=mongodb://luxora-mongo:27017/luxora
+          --health-cmd='node -e "fetch(\"http://localhost:5000/api/health\").then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"'
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
           luxora-motors:ci
+
+      - name: Wait for application
+        run: |
+          for attempt in {1..30}; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' luxora-app)
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ] || [ "$(docker inspect --format='{{.State.Running}}' luxora-app)" != "true" ]; then
+              echo "Application failed to become healthy"
+              docker logs luxora-app || true
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Application health check timed out"
+          docker logs luxora-app || true
+          exit 1
 
       - name: "Smoke test: API and frontend"
         run: |
