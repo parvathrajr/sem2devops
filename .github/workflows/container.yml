@@ -1,0 +1,70 @@
+name: Container CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker build --tag luxora-motors:ci .
+
+      - name: Create CI network
+        run: docker network create luxora-ci
+
+      - name: Start MongoDB
+        run: >-
+          docker run --detach
+          --name luxora-mongo
+          --network luxora-ci
+          --health-cmd='mongosh --quiet --eval "db.adminCommand({ ping: 1 }).ok"'
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+          mongo:7
+
+      - name: Wait for MongoDB
+        run: |
+          for attempt in {1..30}; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' luxora-mongo)
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs luxora-mongo
+          exit 1
+
+      - name: Start application
+        run: >-
+          docker run --detach
+          --name luxora-app
+          --network luxora-ci
+          --publish 5000:5000
+          --env MONGO_URI=mongodb://luxora-mongo:27017/luxora
+          luxora-motors:ci
+
+      - name: Smoke test health endpoint
+        run: curl --fail --retry 30 --retry-delay 2 http://localhost:5000/api/health
+
+      - name: Show application logs
+        if: always()
+        run: docker logs luxora-app || true
+
+      - name: Clean up containers
+        if: always()
+        run: |
+          docker rm --force luxora-app luxora-mongo || true
+          docker network rm luxora-ci || true
