@@ -56,7 +56,7 @@ jobs:
           --env MONGO_URI=mongodb://luxora-mongo:27017/luxora
           luxora-motors:ci
 
-      - name: Smoke test: API and frontend
+      - name: "Smoke test: API and frontend"
         run: |
           curl --fail --retry 30 --retry-delay 2 http://localhost:5000/api/health
           curl --fail --retry 30 --retry-delay 2 http://localhost:5000/ | grep -q '<div id="root">'
