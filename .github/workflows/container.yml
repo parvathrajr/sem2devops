@@ -58,8 +58,24 @@ jobs:
 
       - name: "Smoke test: API and frontend"
         run: |
-          curl --fail --retry 30 --retry-delay 2 http://localhost:5000/api/health
-          curl --fail --retry 30 --retry-delay 2 http://localhost:5000/ | grep -q '<div id="root">'
+          for attempt in {1..30}; do
+            if [ "$(docker inspect --format='{{.State.Running}}' luxora-app 2>/dev/null)" != "true" ]; then
+              echo "Application container stopped before becoming ready"
+              docker logs luxora-app || true
+              exit 1
+            fi
+            if curl --silent --fail http://localhost:5000/api/health; then
+              echo
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "API health check timed out"
+              docker logs luxora-app || true
+              exit 1
+            fi
+            sleep 2
+          done
+          curl --fail http://localhost:5000/ | grep -q '<div id="root">'
 
       - name: Show application logs
         if: always()
